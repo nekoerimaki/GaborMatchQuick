@@ -1,1 +1,540 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ガボール マッチ クイック</title>
+    <style>
+        /* 基本スタイル */
+        body {
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f2f5;
+            color: #333;
+        }
 
+        #game-container {
+            width: 100%;
+            max-width: 800px;
+            padding: 20px;
+            text-align: center;
+            position: relative; /* ミス演出の基準位置 */
+        }
+
+        h1 {
+            color: #005a9c;
+        }
+
+        h2 {
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: white;
+            margin: 5px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* カウントダウン */
+        #countdown-screen {
+            font-size: 10em;
+            font-weight: bold;
+            color: #007bff;
+            animation: countdown-zoom 1s infinite;
+        }
+
+        @keyframes countdown-zoom {
+            0% { transform: scale(1); opacity: 1; }
+            80% { transform: scale(1.2); opacity: 0; }
+            100% { transform: scale(1.2); opacity: 0; }
+        }
+
+        /* メインゲーム */
+        #info-bar {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+
+        #game-board {
+            display: grid;
+            gap: 10px;
+            perspective: 1000px; /* 3D効果のため */
+        }
+
+        .card {
+            width: 100%;
+            aspect-ratio: 1 / 1; /* 正方形を維持 */
+            position: relative;
+            cursor: pointer;
+        }
+
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: opacity 0.5s, visibility 0.5s;
+        }
+
+        .card-front {
+            background-color: #ddd;
+        }
+
+        .card.selected .card-front {
+            border: 4px solid skyblue; /* 選択時の水色枠 */
+            box-sizing: border-box;
+        }
+
+        .card.mismatched .card-front {
+            border: 4px solid #d9534f; /* 間違い時の赤色枠 */
+            box-sizing: border-box;
+        }
+
+        .card.matched {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none; /* クリックできなくする */
+            transition-delay: 0.3s; /* 0.3秒遅れて消えるようにする */
+        }
+
+        /* クリア画面 */
+        #clear-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            /* display: flex; はJSで制御 */
+            justify-content: center;
+            align-items: center;
+        }
+
+        .clear-modal {
+            background-color: white;
+            padding: 40px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        /* ミス演出 */
+        #mistake-feedback {
+            position: fixed; /* 画面全体を覆うように変更 */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #d9534f; /* 赤色 */
+            font-size: 15vw; /* 画面幅に応じた大きな文字サイズ */
+            font-weight: bold;
+            z-index: 100;
+            pointer-events: none; /* テキストがクリックを妨げないように */
+            animation: fadeInOut 1.5s ease-in-out;
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.5); /* 文字に影をつける */
+        }
+
+        @keyframes fadeInOut {
+            0%, 100% { 
+                opacity: 0; 
+                transform: translate(-50%, -50%) scale(0.5); 
+            }
+            20%, 80% { 
+                opacity: 1; 
+                transform: translate(-50%, -50%) scale(1); 
+            }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes popIn {
+            from { transform: scale(0.8); }
+            to { transform: scale(1); }
+        }
+
+        #clear-time {
+            font-weight: bold;
+            color: #d9534f;
+            font-size: 1.5em;
+        }
+
+        /* レスポンシブデザイン */
+        /* PC (横幅が十分ある場合) */
+        @media (min-width: 601px) {
+            #game-board {
+                grid-template-columns: repeat(6, 1fr); /* 6列 */
+            }
+        }
+
+        /* スマートフォン (横幅が狭い場合) */
+        @media (max-width: 600px) {
+            #game-board {
+                grid-template-columns: repeat(4, 1fr); /* 4列 */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <h1>ガボール マッチ クイック</h1>
+
+        <!-- 初期画面 -->
+        <div id="start-screen">
+            <h2>難易度を選択してください</h2>
+            <button id="normal-btn">ふつう</button>
+            <button id="hard-btn">むずかしい</button>
+        </div>
+
+        <!-- カウントダウン画面 -->
+        <div id="countdown-screen" class="hidden">
+            <div id="countdown-timer">5</div>
+        </div>
+
+        <!-- メインゲーム画面 -->
+        <div id="main-game" class="hidden">
+            <div id="info-bar">
+                <span>Time: <span id="timer">0分 00秒</span></span>
+                <span id="difficulty-display"></span>
+            </div>
+            <div id="game-board"></div>
+        </div>
+
+        <!-- ミス演出用テキスト -->
+        <div id="mistake-feedback" class="hidden">
+            ミス！
+        </div>
+
+        <!-- クリア画面 -->
+        <div id="clear-screen" class="hidden">
+            <div class="clear-modal">
+                <h2>Clear!</h2>
+                <p>あなたのタイムは <span id="clear-time"></span> 秒でした！</p>
+                <button id="restart-btn">もう一度プレイ</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM要素の取得
+            const startScreen = document.getElementById('start-screen');
+            const countdownScreen = document.getElementById('countdown-screen');
+            const mainGame = document.getElementById('main-game');
+            const clearScreen = document.getElementById('clear-screen');
+            const gameBoard = document.getElementById('game-board');
+            const timerEl = document.getElementById('timer');
+            const countdownTimerEl = document.getElementById('countdown-timer');
+            const difficultyDisplayEl = document.getElementById('difficulty-display');
+            const clearTimeEl = document.getElementById('clear-time');
+            const mistakeFeedback = document.getElementById('mistake-feedback');
+
+            const normalBtn = document.getElementById('normal-btn');
+            const hardBtn = document.getElementById('hard-btn');
+            const restartBtn = document.getElementById('restart-btn');
+
+            // ゲーム設定
+            let timerInterval;
+            let startTime;
+
+            // --- イベントリスナー ---
+            normalBtn.addEventListener('click', () => startGame('ふつう'));
+            hardBtn.addEventListener('click', () => startGame('むずかしい'));
+            restartBtn.addEventListener('click', () => {
+                clearScreen.classList.add('hidden');
+                startScreen.classList.remove('hidden');
+                // アニメーションスタイルをリセット
+                clearScreen.style.display = '';
+                clearScreen.style.animation = '';
+                clearScreen.querySelector('.clear-modal').style.animation = '';
+                resetGame();
+            });
+
+            // ゲーム状態の管理
+            const gameState = {
+                PAIR_COUNT: 18,
+                difficulty: 'ふつう',
+                firstCard: null,
+                lockBoard: false,
+                matchedPairs: 0,
+            };
+
+            // --- ゲームロジック ---
+
+            // ガボールパッチを生成する関数
+            function createGabor(canvas, size = 100) {
+                const ctx = canvas.getContext('2d');
+                canvas.width = size;
+                canvas.height = size;
+
+                // 4方向の角度を定義: 0(横), PI/4(右斜め), PI/2(縦), 3*PI/4(左斜め)
+                const orientations = [0, Math.PI / 4, Math.PI / 2, 3 * Math.PI / 4];
+                const theta = orientations[Math.floor(Math.random() * orientations.length)]; // 角度をランダムに選択
+                const lambda = size / (Math.random() * 4 + 2); // 波長 (縞の太さのバリエーションを大きくする)
+                const sigma = size / 4; // ガウス関数の標準偏差 (カードいっぱいに広がるように調整)
+                // 位相のランダム性を下げる（4パターンに限定）
+                const phase = 0; // 位相を固定してランダム性をなくす
+                const contrast = 127;
+
+                const cosTheta = Math.cos(theta);
+                const sinTheta = Math.sin(theta);
+
+                const imageData = ctx.createImageData(size, size);
+                const data = imageData.data;
+
+                for (let y = 0; y < size; y++) {
+                    for (let x = 0; x < size; x++) {
+                        const x_prime = (x - size / 2) * cosTheta + (y - size / 2) * sinTheta;
+                        const y_prime = -(x - size / 2) * sinTheta + (y - size / 2) * cosTheta;
+                        
+                        const gaborValue = Math.exp(-(x_prime * x_prime + y_prime * y_prime) / (2 * sigma * sigma)) *
+                                         Math.cos(2 * Math.PI * x_prime / lambda + phase);
+                        
+                        const color = 128 + contrast * gaborValue;
+                        const i = (y * size + x) * 4;
+                        data[i] = color;
+                        data[i + 1] = color;
+                        data[i + 2] = color;
+                        data[i + 3] = 255;
+                    }
+                }
+                ctx.putImageData(imageData, 0, 0);
+                return canvas.toDataURL(); // 画像データを返す
+            }
+
+            // ゲーム開始処理
+            function startGame(selectedDifficulty) {
+                gameState.difficulty = selectedDifficulty;
+                startScreen.classList.add('hidden');
+                countdownScreen.classList.remove('hidden');
+                // カウントダウン中のスクロールバーちらつき防止
+                document.body.style.overflow = 'hidden';
+                
+                let count = 3;
+                countdownTimerEl.textContent = count;
+                const countdownInterval = setInterval(() => {
+                    count--;
+                    countdownTimerEl.textContent = count;
+                    if (count === 0) {
+                        document.body.style.overflow = ''; // スクロールバーを元に戻す
+                        clearInterval(countdownInterval);
+                        countdownScreen.classList.add('hidden');
+                        mainGame.classList.remove('hidden');
+                        difficultyDisplayEl.textContent = `難易度: ${gameState.difficulty}`;
+                        initializeGame();
+                    }
+                }, 1000);
+            }
+
+            // ゲームの初期化とボードの生成
+            function initializeGame() {
+                resetGame();
+                createBoard();
+                startTimer();
+            }
+
+            // ボードの生成
+            function createBoard() {
+                const gaborSources = [];
+                for (let i = 0; i < gameState.PAIR_COUNT; i++) {
+                    const canvas = document.createElement('canvas');
+                    const gaborDataUrl = createGabor(canvas);
+                    gaborSources.push(gaborDataUrl);
+                    gaborSources.push(gaborDataUrl); // ペアを作成
+                }
+
+                shuffle(gaborSources);
+
+                gaborSources.forEach((src, index) => {
+                    const card = document.createElement('div');
+                    card.classList.add('card');
+                    card.dataset.id = index;
+                    card.dataset.gaborSrc = src;
+
+                    card.innerHTML = `
+                        <div class="card-face card-front">
+                            <img src="${src}" alt="Gabor Patch">
+                        </div>`;
+
+                    card.addEventListener('click', handleCardClick);
+                    gameBoard.appendChild(card);
+                });
+            }
+
+            // カードクリック時の処理
+            function handleCardClick() {
+                if (gameState.lockBoard || this === gameState.firstCard || this.classList.contains('matched')) return;
+
+                this.classList.add('selected');
+
+                if (!gameState.firstCard) {
+                    gameState.firstCard = this;
+                    return;
+                }
+
+                gameState.lockBoard = true;
+                checkForMatch(this);
+            }
+
+            // ペアが一致したかチェック
+            function checkForMatch(secondCard) {
+                const isMatch = gameState.firstCard.dataset.gaborSrc === secondCard.dataset.gaborSrc;
+                isMatch ? disableCards(secondCard) : deselectCards(secondCard);
+            }
+
+            // マッチした場合の処理
+            function disableCards(secondCard) {
+                gameState.firstCard.classList.add('matched');
+                secondCard.classList.add('matched');
+                gameState.matchedPairs++;
+                resetTurn();
+
+                if (gameState.matchedPairs === gameState.PAIR_COUNT) {
+                    stopTimer();
+                    setTimeout(showClearScreen, 600);
+                }
+            }
+
+            // マッチしなかった場合の処理
+            function deselectCards(secondCard) {
+                // 2枚目を赤枠にする
+                secondCard.classList.add('mismatched');
+
+                if (gameState.difficulty === 'むずかしい') {
+                    // 正解のカードを探してヒントとして表示
+                    const correctCard = findMatchingCard(gameState.firstCard);
+                    if (correctCard) {
+                        correctCard.classList.add('selected'); // 正解を水色枠で示す
+                    }
+                    // 1.8秒後にリセット処理
+                    setTimeout(() => {
+                        handleHardModeMistake();
+                    }, 1800);
+                } else {
+                    // 「ふつう」モードの場合
+                    setTimeout(() => {
+                        gameState.firstCard.classList.remove('selected');
+                        secondCard.classList.remove('selected', 'mismatched');
+                        resetTurn();
+                    }, 1000);
+                }
+            }
+
+            // 難易度「むずかしい」で間違えた時の処理
+            function handleHardModeMistake() {
+                // 全てのカードの選択状態を解除
+                const allCards = document.querySelectorAll('.card.selected, .card.mismatched');
+                allCards.forEach(card => card.classList.remove('selected'));
+
+                // ターンをリセットしてから演出を開始
+                resetTurn();
+
+                // ゲームボードをロックして操作を防ぐ
+                gameState.lockBoard = true;
+
+                // テキスト演出を表示
+                mistakeFeedback.classList.remove('hidden');
+
+                setTimeout(() => {
+                    // テキスト演出を非表示に
+                    mistakeFeedback.classList.add('hidden');
+
+                    // ボードを再生成してやり直し
+                    gameBoard.innerHTML = '';
+                    gameState.matchedPairs = 0;
+                    createBoard();
+                    // シャッフル後にロックを解除
+                    gameState.lockBoard = false;
+                }, 1500); // 演出を1.5秒表示
+            }
+
+            // firstCardに対応するペアのカードを探す関数
+            function findMatchingCard(firstCard) {
+                const cards = document.querySelectorAll('.card:not(.matched)');
+                for (const card of cards) {
+                    if (card !== firstCard && card.dataset.gaborSrc === firstCard.dataset.gaborSrc) {
+                        return card;
+                    }
+                }
+                return null;
+            }
+
+            // ターンをリセット
+            function resetTurn() {
+                gameState.firstCard = null;
+                gameState.lockBoard = false;
+            }
+            
+            // ゲーム全体をリセット
+            function resetGame() {
+                gameBoard.innerHTML = '';
+                gameState.matchedPairs = 0;
+                resetTurn(); // firstCard, lockBoardをリセット
+                stopTimer();
+                timerEl.textContent = '0分 00秒';
+            }
+
+            // 配列をシャッフル（Fisher-Yatesアルゴリズム）
+            function shuffle(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+            }
+
+            // タイマー関連
+            function startTimer() {
+                startTime = Date.now();
+                timerInterval = setInterval(() => {
+                    const totalSeconds = Math.floor((Date.now() - startTime) / 1000);
+                    const minutes = Math.floor(totalSeconds / 60);
+                    const seconds = totalSeconds % 60;
+                    // 0埋めして表示
+                    timerEl.textContent = `${minutes}分 ${String(seconds).padStart(2, '0')}秒`;
+                }, 100);
+            }
+
+            function stopTimer() {
+                clearInterval(timerInterval);
+            }
+
+            // クリア画面の表示
+            function showClearScreen() {
+                mainGame.classList.add('hidden');
+                clearScreen.classList.remove('hidden');
+                // アニメーションを適用するためにスタイルを動的に追加
+                clearScreen.style.display = 'flex';
+                clearScreen.style.animation = 'fadeIn 0.5s';
+                clearScreen.querySelector('.clear-modal').style.animation = 'popIn 0.5s forwards';
+                clearTimeEl.textContent = timerEl.textContent;
+            }
+        });
+    </script>
+</body>
+</html>
