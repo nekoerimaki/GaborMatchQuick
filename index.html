@@ -290,13 +290,13 @@
             // ガボールパッチを生成する関数
             function createGabor(canvas, size = 100) {
                 const ctx = canvas.getContext('2d');
-                canvas.width = size;
-                canvas.height = size;
 
                 // 4方向の角度を定義: 0(横), PI/4(右斜め), PI/2(縦), 3*PI/4(左斜め)
                 const orientations = [0, Math.PI / 4, Math.PI / 2, 3 * Math.PI / 4];
+                // 5パターンの波長を定義
+                const lambdas = [size / 2, size / 3, size / 4, size / 5, size / 6];
                 const theta = orientations[Math.floor(Math.random() * orientations.length)]; // 角度をランダムに選択
-                const lambda = size / (Math.random() * 4 + 2); // 波長 (縞の太さのバリエーションを大きくする)
+                const lambda = lambdas[Math.floor(Math.random() * lambdas.length)]; // 波長を5パターンからランダムに選択
                 const sigma = size / 4; // ガウス関数の標準偏差 (カードいっぱいに広がるように調整)
                 // 位相のランダム性を下げる（4パターンに限定）
                 const phase = 0; // 位相を固定してランダム性をなくす
@@ -304,6 +304,9 @@
 
                 const cosTheta = Math.cos(theta);
                 const sinTheta = Math.sin(theta);
+
+                canvas.width = size;
+                canvas.height = size;
 
                 const imageData = ctx.createImageData(size, size);
                 const data = imageData.data;
@@ -325,7 +328,38 @@
                     }
                 }
                 ctx.putImageData(imageData, 0, 0);
-                return canvas.toDataURL(); // 画像データを返す
+                return { dataUrl: canvas.toDataURL(), params: { theta, lambda, sigma, phase, contrast } }; // 画像データとパラメータを返す
+            }
+            
+            // 指定されたパラメータでガボールパッチを生成する関数
+            function createGaborWithParams(canvas, theta, lambda, size = 100) {
+                const ctx = canvas.getContext('2d');
+                const sigma = size / 4;
+                const phase = 0;
+                const contrast = 127;
+
+                const cosTheta = Math.cos(theta);
+                const sinTheta = Math.sin(theta);
+
+                canvas.width = size;
+                canvas.height = size;
+
+                const imageData = ctx.createImageData(size, size);
+                const data = imageData.data;
+
+                for (let y = 0; y < size; y++) {
+                    for (let x = 0; x < size; x++) {
+                        const x_prime = (x - size / 2) * cosTheta + (y - size / 2) * sinTheta;
+                        const y_prime = -(x - size / 2) * sinTheta + (y - size / 2) * cosTheta;
+                        const gaborValue = Math.exp(-(x_prime * x_prime + y_prime * y_prime) / (2 * sigma * sigma)) * Math.cos(2 * Math.PI * x_prime / lambda + phase);
+                        const color = 128 + contrast * gaborValue;
+                        const i = (y * size + x) * 4;
+                        data[i] = data[i + 1] = data[i + 2] = color;
+                        data[i + 3] = 255;
+                    }
+                }
+                ctx.putImageData(imageData, 0, 0);
+                return { dataUrl: canvas.toDataURL(), params: { theta, lambda, sigma, phase, contrast } };
             }
 
             // ゲーム開始処理
@@ -361,25 +395,40 @@
 
             // ボードの生成
             function createBoard() {
-                const gaborSources = [];
-                for (let i = 0; i < gameState.PAIR_COUNT; i++) {
-                    const canvas = document.createElement('canvas');
-                    const gaborDataUrl = createGabor(canvas);
-                    gaborSources.push(gaborDataUrl);
-                    gaborSources.push(gaborDataUrl); // ペアを作成
+                // Step 1: 全20種類のユニークなガボールパッチを生成
+                const allGaborTypes = [];
+                const canvas = document.createElement('canvas');
+                const orientations = [0, Math.PI / 4, Math.PI / 2, 3 * Math.PI / 4];
+                const lambdas = [100 / 2, 100 / 3, 100 / 4, 100 / 5, 100 / 6]; // size=100を想定
+
+                for (const theta of orientations) {
+                    for (const lambda of lambdas) {
+                        const gaborInfo = createGaborWithParams(canvas, theta, lambda);
+                        allGaborTypes.push(gaborInfo);
+                    }
                 }
 
+                // Step 2: 必要なペア数だけシャッフルして選択
+                shuffle(allGaborTypes);
+                const selectedGabors = allGaborTypes.slice(0, gameState.PAIR_COUNT);
+
+                // Step 3: ペアを作成して最終的なカード配列を生成
+                const gaborSources = [...selectedGabors, ...selectedGabors];
+
+                // Step 4: 最終的なカード配列をシャッフル
                 shuffle(gaborSources);
 
-                gaborSources.forEach((src, index) => {
+                gaborSources.forEach((gaborInfo, index) => {
+                    // 盤面にカードを配置
                     const card = document.createElement('div');
                     card.classList.add('card');
                     card.dataset.id = index;
-                    card.dataset.gaborSrc = src;
+                    card.dataset.gaborSrc = gaborInfo.dataUrl;
+                    card.dataset.gaborParams = JSON.stringify(gaborInfo.params); // パラメータをdatasetに保存
 
                     card.innerHTML = `
                         <div class="card-face card-front">
-                            <img src="${src}" alt="Gabor Patch">
+                            <img src="${gaborInfo.dataUrl}" alt="Gabor Patch">
                         </div>`;
 
                     card.addEventListener('click', handleCardClick);
@@ -390,6 +439,10 @@
             // カードクリック時の処理
             function handleCardClick() {
                 if (gameState.lockBoard || this === gameState.firstCard || this.classList.contains('matched')) return;
+
+                // デバッグ用にパラメータをコンソールに出力
+                const params = JSON.parse(this.dataset.gaborParams);
+                console.log('Card Parameters:', params);
 
                 this.classList.add('selected');
 
